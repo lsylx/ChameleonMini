@@ -18,6 +18,8 @@
 /* Map IDs to text */
 static const MapEntryType PROGMEM ConfigurationMap[] = {
     { .Id = CONFIG_NONE, 			.Text = "NONE" },
+    { .Id = CONFIG_FM11RF005SH,     .Text = "FM11RF005SH" },
+    { .Id = CONFIG_JCOP,     .Text = "JCOP" },
 #ifdef CONFIG_MF_ULTRALIGHT_SUPPORT
     { .Id = CONFIG_MF_ULTRALIGHT, 	.Text = "MF_ULTRALIGHT" },
     { .Id = CONFIG_MF_ULTRALIGHT_EV1_80B,   .Text = "MF_ULTRALIGHT_EV1_80B" },
@@ -100,6 +102,38 @@ static const PROGMEM ConfigurationType ConfigurationTable[] = {
         .MemorySize = 0,
         .ReadOnly = true,
         .TagFamily = TAG_FAMILY_NONE
+    },
+    [CONFIG_FM11RF005SH] = {
+        .CodecInitFunc = ISO14443ACodecInit,
+        .CodecDeInitFunc = CodecDeInitDummy,
+        .CodecTaskFunc = ISO14443ACodecTask,
+        .ApplicationInitFunc = FM11RF005SHAppInit,
+        .ApplicationResetFunc = MifareClassicAppReset,
+        .ApplicationTaskFunc = MifareClassicAppTask,
+        .ApplicationTickFunc = ApplicationTickDummy,
+        .ApplicationProcessFunc = FM11RF005SHAppProcess,
+        .ApplicationGetUidFunc = FM11RF005SHGetUid,
+        .ApplicationSetUidFunc = FM11RF005SHSetUid,
+        .UidSize = MIFARE_CLASSIC_UID_SIZE,
+        .MemorySize = MIFARE_CLASSIC_1K_MEM_SIZE,
+        .ReadOnly = false,
+        .TagFamily = TAG_FAMILY_ISO14443A
+    },
+    [CONFIG_JCOP] = {
+        .CodecInitFunc = ISO14443ACodecInit,
+        .CodecDeInitFunc = CodecDeInitDummy,
+        .CodecTaskFunc = ISO14443ACodecTask,
+        .ApplicationInitFunc = JCOPAppInit,
+        .ApplicationResetFunc = MifareClassicAppReset,
+        .ApplicationTaskFunc = MifareClassicAppTask,
+        .ApplicationTickFunc = ApplicationTickDummy,
+        .ApplicationProcessFunc = JCOPAppProcess,
+        .ApplicationGetUidFunc = MifareClassicGetUid,
+        .ApplicationSetUidFunc = MifareClassicSetUid,
+        .UidSize = MIFARE_CLASSIC_UID_SIZE,
+        .MemorySize = MIFARE_CLASSIC_1K_MEM_SIZE,
+        .ReadOnly = false,
+        .TagFamily = TAG_FAMILY_ISO14443A
     },
 #ifdef CONFIG_MF_ULTRALIGHT_SUPPORT
     [CONFIG_MF_ULTRALIGHT] = {

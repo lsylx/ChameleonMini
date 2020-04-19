@@ -359,6 +359,14 @@ const PROGMEM CommandEntryType CommandTable[] = {
 //    .SetFunc    = CommandSetBaudrate,
         .SetFunc    = NO_FUNCTION,
         .GetFunc    = CommandGetBaudrate,
+    } ,   
+    //FM11RF005 SetCommand
+    {
+        .Command        = COMMAND_FMSB,
+        .ExecFunc       = NO_FUNCTION,
+        .ExecParamFunc  = NO_FUNCTION,
+        .SetFunc        = CommandFM11SetBlock,
+        .GetFunc        = NO_FUNCTION
     }
 };
 

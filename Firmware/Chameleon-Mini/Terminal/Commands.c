@@ -759,3 +759,13 @@ CommandStatusIdType CommandGetSakMode(char *OutMessage) {
     OutMessage[1] = '\0';
     return COMMAND_INFO_OK_WITH_TEXT_ID;
 }
+
+CommandStatusIdType CommandFM11SetBlock(char* OutMessage, const char* InParam)
+{
+    uint8_t UidBuffer[5];
+    if (HexStringToBuffer(UidBuffer, sizeof(UidBuffer), InParam) != 5) {
+        return COMMAND_ERR_INVALID_PARAM_ID;
+    }
+    FM11RF005SHSetBlock(UidBuffer);
+    return COMMAND_INFO_OK_ID;
+}

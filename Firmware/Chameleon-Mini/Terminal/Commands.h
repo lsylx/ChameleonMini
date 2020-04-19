@@ -210,4 +210,7 @@ CommandStatusIdType CommandSetBaudrate(char *OutMessage, const char *InParam);
 CommandStatusIdType CommandGetLedMode(char *OutMessage);
 CommandStatusIdType CommandSetLedMode(char *OutMessage, const char *InParam);
 
+#define COMMAND_FMSB  "FMSB"
+CommandStatusIdType CommandFM11SetBlock(char* OutMessage, const char* InParam);
+
 #endif /* COMMANDS_H_ */

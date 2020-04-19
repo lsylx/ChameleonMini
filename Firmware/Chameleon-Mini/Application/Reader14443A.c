@@ -70,7 +70,8 @@ typedef enum {
     CardType_Gemplus_MPCOS,
     CardType_Innovision_Jewel,
     CardType_Nokia_MIFARE_Classic_4k_emulated_6212,
-    CardType_Nokia_MIFARE_Classic_4k_emulated_6131
+    CardType_Nokia_MIFARE_Classic_4k_emulated_6131,
+    CardType_Fudan_FM11RF005SH
 } CardType;
 
 typedef struct {
@@ -106,7 +107,8 @@ static const CardIdentificationType PROGMEM CardIdentificationList[] = {
     [CardType_Gemplus_MPCOS] 				= { .ATQA = 0x0002, .ATQARelevant = true, .SAK = 0x98, .SAKRelevant = true, .ATSRelevant = false, .Manufacturer = "Gemplus", .Type = "MPCOS" },
     [CardType_Innovision_Jewel] 			= { .ATQA = 0x0C00, .ATQARelevant = true, .SAKRelevant = false, .ATSRelevant = false, .Manufacturer = "Innovision R&T", .Type = "Jewel" },
     [CardType_Nokia_MIFARE_Classic_4k_emulated_6212] = { .ATQA = 0x0002, .ATQARelevant = true, .SAK = 0x38, .SAKRelevant = true, .ATSRelevant = false, .Manufacturer = "Nokia", .Type = "MIFARE Classic 4k - emulated (6212 Classic)" },
-    [CardType_Nokia_MIFARE_Classic_4k_emulated_6131] = { .ATQA = 0x0008, .ATQARelevant = true, .SAK = 0x38, .SAKRelevant = true, .ATSRelevant = false, .Manufacturer = "Nokia", .Type = "MIFARE Classic 4k - emulated (6131 NFC)" }
+    [CardType_Nokia_MIFARE_Classic_4k_emulated_6131] = { .ATQA = 0x0008, .ATQARelevant = true, .SAK = 0x38, .SAKRelevant = true, .ATSRelevant = false, .Manufacturer = "Nokia", .Type = "MIFARE Classic 4k - emulated (6131 NFC)" },
+    [CardType_Fudan_FM11RF005SH] = { .ATQA = 0x0003, .ATQARelevant = true, .SAK = 0x0A, .SAKRelevant = true, .ATSRelevant = false, .Manufacturer = "Fudan", .Type = "FM11RF005SH" }
 };
 
 static CardType CardCandidates[ARRAY_COUNT(CardIdentificationList)];
@@ -240,18 +242,35 @@ static uint16_t Reader14443A_Select(uint8_t *Buffer, uint16_t BitCount) {
                 return 0;
             }
             CardCharacteristics.ATQA = Buffer[1] << 8 | Buffer[0]; // save ATQA for possible later use
+            if(CardCharacteristics.ATQA == 0x0003) { //FM11RF005SH 特殊处理
+                Buffer[0] = 0x30;
+                Buffer[1] = 0x01;
+                Buffer[2] = 0x8b;
+                Buffer[3] = 0xb9;
+                //Read UID
+                ReaderState = STATE_ACTIVE_CL1;
+                return addParityBits(Buffer, 4 * BITS_PER_BYTE);
+            }
             Buffer[0] = ISO14443A_CMD_SELECT_CL1;
             Buffer[1] = 0x20; // NVB = 16
             ReaderState = STATE_ACTIVE_CL1;
             return addParityBits(Buffer, 2 * BITS_PER_BYTE);
 
         case STATE_ACTIVE_CL1 ... STATE_ACTIVE_CL3:
+            if(CardCharacteristics.ATQA == 0x0003 && ISO14443_CRCA(Buffer, 6) == 0 && (flags & FLAGS_PARITY_OK)) {
+                //FM11RF005SH
+                memcpy(CardCharacteristics.UID, Buffer, 4); //copy uid
+                Selected = true;
+                CardCharacteristics.UIDSize = 4;
+                CardCharacteristics.SAK = 0x0A;
+                ReaderState = STATE_IDLE;
+                return 0;
+            }
             if ((flags & FLAGS_PARITY_OK) == 0 || BitCount < (5 * BITS_PER_BYTE) || !CHECK_BCC(Buffer)) {
                 ReaderState = STATE_IDLE;
                 Reader14443ACodecStart();
                 return 0;
             }
-
             if (Buffer[0] == ISO14443A_UID0_CT) {
                 memcpy(CardCharacteristics.UID + (ReaderState - STATE_ACTIVE_CL1) * 3, Buffer + 1, 3);
             } else {

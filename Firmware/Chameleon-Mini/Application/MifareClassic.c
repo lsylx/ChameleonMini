@@ -88,8 +88,7 @@
 #define CMD_CHINESE_UNLOCK_RW       0x43
 #define CMD_CHINESE_UFUID_UNLOCK	0xE0
 
-
-
+//uint8_t parity;
 
 /*
 Source: NXP: MF1S50YYX Product data sheet
@@ -383,6 +382,22 @@ INLINE void ValueToBlock(uint8_t *Block, uint32_t Value) {
     Block[9] = Block[1];
     Block[10] = Block[2];
     Block[11] = Block[3];
+}
+
+void FM11RF005SHAppInit(void)
+{
+    State = STATE_IDLE;
+    CardATQAValue = 0x0003;//rf005sh
+    CardSAKValue = 0x0a;//rf005sh
+    FromHalt = false;
+}
+
+void JCOPAppInit(void)
+{
+    State = STATE_IDLE;
+    CardATQAValue = 0x0004;//JCOP
+    CardSAKValue = 0x28;//JCOP
+    FromHalt = false;
 }
 
 void MifareClassicAppInitMini4B(void) {
@@ -1270,6 +1285,177 @@ uint16_t MifareClassicAppProcess(uint8_t *Buffer, uint16_t BitCount) {
     return ISO14443A_APP_NO_RESPONSE;
 }
 
+
+//APDU NOT IMPLEMENTED
+uint16_t JCOPAppProcess(uint8_t* Buffer, uint16_t BitCount)
+{
+    switch(State) {
+        case STATE_IDLE:
+        case STATE_HALT:
+            FromHalt = State == STATE_HALT;
+            if (ISO14443AWakeUp(Buffer, &BitCount, CardATQAValue, FromHalt)) {
+                State = STATE_READY1;
+                return BitCount;
+            }
+            break;
+            
+        case STATE_READY1:
+            if (ISO14443AWakeUp(Buffer, &BitCount, CardATQAValue, FromHalt)) {
+                State = FromHalt ? STATE_HALT : STATE_IDLE;
+                return ISO14443A_APP_NO_RESPONSE;
+            } else if (Buffer[0] == ISO14443A_CMD_SELECT_CL1) {
+                uint8_t UidCL1[ISO14443A_CL_UID_SIZE];
+                MemoryReadBlock(UidCL1, MEM_UID_CL1_ADDRESS, MEM_UID_CL1_SIZE);
+                if (ISO14443ASelect(Buffer, &BitCount, UidCL1, CardSAKValue)) {
+                    AccessAddress = 0xff; /* invalid, force reload */
+                    State = STATE_ACTIVE;
+                }
+                return BitCount;
+            } else {
+                /* Unknown command. Enter HALT state. */
+                State = STATE_HALT;
+            }
+            
+        case STATE_ACTIVE:
+            if (ISO14443AWakeUp(Buffer, &BitCount, CardATQAValue, FromHalt)) {
+                State = FromHalt ? STATE_HALT : STATE_IDLE;
+                return ISO14443A_APP_NO_RESPONSE;
+            } else if (Buffer[0] == CMD_HALT) {
+                /* Halts the tag. According to the ISO14443, the second
+                 * byte is supposed to be 0. */
+                if (Buffer[1] == 0) {
+                    if (ISO14443ACheckCRCA(Buffer, CMD_HALT_FRAME_SIZE)) {
+                        /* According to ISO14443, we must not send anything
+                         * in order to acknowledge the HALT command. */
+                        State = STATE_HALT;
+                        return ISO14443A_APP_NO_RESPONSE;
+                    } else {
+                        Buffer[0] = NAK_CRC_ERROR;
+                        return ACK_NAK_FRAME_SIZE;
+                    }
+                } else {
+                    Buffer[0] = NAK_INVALID_ARG;
+                    return ACK_NAK_FRAME_SIZE;
+                }
+            }
+            else if (Buffer[0] == 0xe0) {
+                Buffer[0] = 0x04; Buffer[1]=0x58;  Buffer[2] = 0x80; Buffer[3] = 0x02; Buffer[4] = 0x00; Buffer[5] = 0x00;
+                return 6;
+            }
+            else {
+                /* Unknown command. Enter HALT state. */
+                State = STATE_IDLE;
+                return ISO14443A_APP_NO_RESPONSE;
+            }
+            break;
+            
+        case STATE_AUTHING:
+        case STATE_DECREMENT:
+        case STATE_INCREMENT:
+        case STATE_RESTORE:
+            break;
+        default:
+            /* Unknown state? Should never happen. */
+            break;
+    }
+    
+    /* No response has been sent, when we reach here */
+    return ISO14443A_APP_NO_RESPONSE;
+}
+
+uint16_t FM11RF005SHAppProcess(uint8_t* Buffer, uint16_t BitCount)
+{
+    switch(State) {
+        case STATE_IDLE:
+        case STATE_HALT:
+            FromHalt = State == STATE_HALT;
+            if (ISO14443AWakeUp(Buffer, &BitCount, CardATQAValue, FromHalt)) {
+                State = STATE_ACTIVE; //直接激活了
+                return BitCount;
+            }
+            break;
+            
+        case STATE_READY1: //不支持选卡，因此没有这个状态
+        case STATE_ACTIVE:
+            if (ISO14443AWakeUp(Buffer, &BitCount, CardATQAValue, FromHalt)) {
+                State = FromHalt ? STATE_HALT : STATE_IDLE;
+                return ISO14443A_APP_NO_RESPONSE;
+            } else if (Buffer[0] == ISO14443A_CMD_SELECT_CL1) { //但是也接受0x93选卡指令
+                Buffer[0]=0x0A; //SAK
+                State = STATE_ACTIVE;
+                return 8; //ATQA 0A 一个单位
+            } else if (Buffer[0] == CMD_HALT) {
+                if (Buffer[1] == 0) {
+                    if (ISO14443ACheckCRCA(Buffer, CMD_HALT_FRAME_SIZE)) {
+                        LogEntry(LOG_INFO_APP_CMD_HALT, NULL, 0);
+                        State = STATE_HALT;
+                        return ISO14443A_APP_NO_RESPONSE;
+                    }
+                }
+                //其他情况一律返回01
+                Buffer[0] = NAK_CRC_ERROR;
+                return ACK_NAK_FRAME_SIZE;
+            } else if ((Buffer[0] == CMD_READ)) { //READ BLOCK
+                if (ISO14443ACheckCRCA(Buffer, CMD_READ_FRAME_SIZE)) {
+                    if(Buffer[1]<=0x0F) //必须是小于这点的
+                        MemoryReadBlock(Buffer, 0x00 + Buffer[1] * 4, MEM_UID_CL1_SIZE);//读取扇区
+                    else {
+                        State = STATE_HALT;
+                        return ISO14443A_APP_NO_RESPONSE;
+                    }
+                    ISO14443AAppendCRCA(Buffer, MEM_UID_CL1_SIZE);
+                    LogEntry(LOG_INFO_APP_CMD_READ, Buffer, 6);
+                    return 48; //4字节的数据，2字节的CRC
+                }
+            }
+            else if ((Buffer[0] == CMD_AUTH_A)) { //AuthValue
+                if (ISO14443ACheckCRCA(Buffer, CMD_READ_FRAME_SIZE)) {
+                    MemoryReadBlock(Buffer, 0x00 + 0x10 * 4, MEM_UID_CL1_SIZE);//Tag Nonce 存在这个位置
+                    LogEntry(LOG_INFO_APP_CMD_AUTH, Buffer, 4);
+                    State = STATE_AUTHING; //进入认证状态
+                    return 32;
+                }
+            } 
+            else {
+                State = STATE_IDLE;
+                LogEntry(LOG_INFO_APP_CMD_UNKNOWN, Buffer, (BitCount+7)/8);
+                Buffer[0] = NAK_CRC_ERROR;
+                return ACK_NAK_FRAME_SIZE;
+            }
+            break;
+        
+        case STATE_AUTHING:
+            MemoryReadBlock(Buffer, 0x00 + 0x11 * 4, MEM_UID_CL1_SIZE+1);//Card Nonce 存在这个位置
+            uint8_t parity = Buffer[4];
+            for(uint8_t i=0; i<8;i++)
+            {
+                Buffer[ISO14443A_BUFFER_PARITY_OFFSET+i] = parity >> (7-i) & 0x01;
+            }
+            LogEntry(LOG_INFO_APP_CMD_AUTH, Buffer, ISO14443A_BUFFER_PARITY_OFFSET+1);
+            State = STATE_ACTIVE; //返回认证状态
+            return 32 | ISO14443A_APP_CUSTOM_PARITY;
+        case STATE_AUTHED_IDLE:
+            //这里要先解密
+            if(Buffer[0]==ISO14443A_CMD_WUPA || Buffer[0]==ISO14443A_CMD_REQA) //0x52或者0x26 重新选卡
+            {
+                State = STATE_READY1;
+                return 8;
+            }
+            LogEntry(LOG_INFO_APP_CMD_READ, Buffer, 6);
+            return 32;
+        case STATE_DECREMENT:
+        case STATE_INCREMENT:
+        case STATE_RESTORE:
+        default:
+            /* Unknown state? Should never happen. */
+            break;
+    }
+    
+    /* No response has been sent, when we reach here */
+    return ISO14443A_APP_NO_RESPONSE;
+}
+
+
 void MifareClassicGetUid(ConfigurationUidType Uid) {
     if (ActiveConfiguration.UidSize == 7) {
         //Uid[0]=0x88;
@@ -1289,4 +1475,16 @@ void MifareClassicSetUid(ConfigurationUidType Uid) {
         MemoryWriteBlock(Uid, MEM_UID_CL1_ADDRESS, MEM_UID_CL1_SIZE);
         MemoryWriteBlock(&BCC, MEM_UID_BCC1_ADDRESS, ISO14443A_CL_BCC_SIZE);
     }
+}
+void FM11RF005SHSetUid(ConfigurationUidType Uid)
+{
+    MemoryWriteBlock(Uid, 0x00 + 4, MEM_UID_CL1_SIZE);//写进01扇区
+}
+void FM11RF005SHGetUid(ConfigurationUidType Uid)
+{
+    MemoryReadBlock(Uid, 0x00 + 4, MEM_UID_CL1_SIZE);//读出01扇区
+}
+void FM11RF005SHSetBlock(ConfigurationUidType Buffer) //写扇区函数
+{
+    MemoryWriteBlock(Buffer + 1, 0x00 + Buffer[0] * 4, MEM_UID_CL1_SIZE);
 }
