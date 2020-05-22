@@ -1,4 +1,4 @@
-Chameleon-Mini
+Chameleon Mini Rev.G 
 ==============
 This is NOT the official repository of ChameleonMini, a freely programmable, portable tool for NFC security analysis that can emulate and clone contactless cards, read RFID tags and sniff/log RF data. 
 
